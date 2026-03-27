@@ -23,6 +23,8 @@ using System.ComponentModel.Design;
 using System.Diagnostics;
 using System.Globalization;
 using System.Runtime.InteropServices;
+using System.Threading;
+using System.Threading.Tasks;
 
 namespace OpenCppCoverage.VSPackage
 {
@@ -38,7 +40,7 @@ namespace OpenCppCoverage.VSPackage
     /// </summary>
     // This attribute tells the PkgDef creation utility (CreatePkgDef.exe) that this class is
     // a package.
-    [PackageRegistration(UseManagedResourcesOnly = true)]
+    [PackageRegistration(UseManagedResourcesOnly = true, AllowsBackgroundLoading = true)]
     // This attribute is used to register the information needed to show this package
     // in the Help/About dialog of Visual Studio.
     [InstalledProductRegistration("#110", "#112", "1.0", IconResourceID = 400)]
@@ -55,7 +57,7 @@ namespace OpenCppCoverage.VSPackage
         Transient = true)]
     [Guid(GuidList.guidVSPackagePkgString)]
     [ProvideBindingPath]
-    public sealed class OpenCppCoveragePackage : Package
+    public sealed class OpenCppCoveragePackage : AsyncPackage
     {
         CommandRunner commandRunner;
 
@@ -79,31 +81,34 @@ namespace OpenCppCoverage.VSPackage
         /// Initialization of the package; this method is called right after the package is sited, so this is the place
         /// where you can put all the initialization code that rely on services provided by VisualStudio.
         /// </summary>
-        protected override void Initialize()
+        protected override async Task InitializeAsync(CancellationToken cancellationToken, IProgress<ServiceProgressData> progress)
         {
-            Debug.WriteLine (string.Format(CultureInfo.CurrentCulture, "Entering Initialize() of: {0}", this.ToString()));
-            base.Initialize();
+            Debug.WriteLine(string.Format(CultureInfo.CurrentCulture, "Entering InitializeAsync() of: {0}", this.ToString()));
+            await base.InitializeAsync(cancellationToken, progress);
+
+            // Switch to the UI thread for service access and command registration
+            await JoinableTaskFactory.SwitchToMainThreadAsync(cancellationToken);
 
             var package = new PackageInterfaces(this, type => this.GetService(type));
             this.commandRunner = new CommandRunner(package, package);
 
             // Add our command handlers for menu (commands must exist in the .vsct file)
-            OleMenuCommandService mcs = GetService(typeof(IMenuCommandService)) as OleMenuCommandService;
+            OleMenuCommandService mcs = await GetServiceAsync(typeof(IMenuCommandService)) as OleMenuCommandService;
             if ( null != mcs )
             {
                 // Create the commands for the menu item.
                 this.AddCommand(
-                    PkgCmdIDList.RunOpenCppCoverageCommand, 
-                    (s, o) => this.commandRunner.RunCoverage(ProjectSelectionKind.StartUpProject), 
+                    PkgCmdIDList.RunOpenCppCoverageCommand,
+                    (s, o) => this.commandRunner.RunCoverage(ProjectSelectionKind.StartUpProject),
                     mcs);
                 this.AddCommand(
                     PkgCmdIDList.RunOpenCppCoverageSettingsCommand,
                     (s, o) => this.commandRunner.OpenSettingsWindow(ProjectSelectionKind.StartUpProject),
-                    mcs);                
+                    mcs);
 
                 this.AddCommand(
                     PkgCmdIDList.RunOpenCppCoverageFromSelectedProjectCommand,
-                    (s, o) => this.commandRunner.RunCoverage(ProjectSelectionKind.SelectedProject), 
+                    (s, o) => this.commandRunner.RunCoverage(ProjectSelectionKind.SelectedProject),
                     mcs);
                 this.AddCommand(
                     PkgCmdIDList.RunOpenCppCoverageFromSelectedProjectSettingsCommand,
@@ -120,7 +125,7 @@ namespace OpenCppCoverage.VSPackage
         protected override void Dispose(bool disposing)
         {
             base.Dispose(disposing);
-            this.commandRunner.Dispose();
+            this.commandRunner?.Dispose();
         }
 
         //---------------------------------------------------------------------
