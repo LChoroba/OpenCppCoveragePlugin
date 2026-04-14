@@ -29,7 +29,14 @@ namespace OpenCppCoverage.VSPackage
         {
             get
             {
-                return file_.FullPath;
+                try
+                {
+                    return file_.FullPath;
+                }
+                catch
+                {
+                    return null;
+                }
             }
         }
 

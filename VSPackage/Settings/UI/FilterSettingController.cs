@@ -16,12 +16,38 @@
 
 using OpenCppCoverage.VSPackage.Helper;
 using System.Collections.ObjectModel;
+using System.Collections.Generic;
+using System.Linq;
 
 namespace OpenCppCoverage.VSPackage.Settings.UI
 {
     //-------------------------------------------------------------------------
     class FilterSettingController: PropertyChangedNotifier
     {
+        static readonly string[] DefaultExcludedSourcePatterns =
+        {
+            "*Microsoft Visual Studio*",
+            "*Windows Kits*",
+            "*3rdparty*",
+            "*external*",
+            "*extern*",
+            "*packages*",
+            "*vcpkg_installed*",
+            "*boost*",
+            "*vctools*",
+            "*MSVC*",
+            "*VC\\Tools\\MSVC*"
+        };
+
+        static readonly string[] DefaultExcludedModulePatterns =
+        {
+            "*System32*",
+            "*WinSxS*",
+            "*vcruntime*",
+            "*msvcp*",
+            "*ucrtbase*"
+        };
+
         //---------------------------------------------------------------------
         public class SettingsData
         {
@@ -64,12 +90,24 @@ namespace OpenCppCoverage.VSPackage.Settings.UI
             this.Settings.ExcludedSourcePatterns.Clear();
             this.Settings.ExcludedModulePatterns.Clear();
             this.Settings.UnifiedDiffs.Clear();
+
+            AddPatterns(this.Settings.ExcludedSourcePatterns, DefaultExcludedSourcePatterns);
+            AddPatterns(this.Settings.ExcludedModulePatterns, DefaultExcludedModulePatterns);
         }
 
         //---------------------------------------------------------------------
         public void UpdateSettings(SettingsData settings)
         {
-            this.Settings = settings;
+            if (settings == null)
+                return;
+
+            MergePatterns(this.Settings.AdditionalSourcePatterns, settings.AdditionalSourcePatterns);
+            MergePatterns(this.Settings.AdditionalModulePatterns, settings.AdditionalModulePatterns);
+            MergePatterns(this.Settings.ExcludedSourcePatterns, settings.ExcludedSourcePatterns);
+            MergePatterns(this.Settings.ExcludedModulePatterns, settings.ExcludedModulePatterns);
+
+            foreach (var unifiedDiff in settings.UnifiedDiffs ?? new ObservableCollection<FilterSettings.UnifiedDiff>())
+                this.Settings.UnifiedDiffs.Add(unifiedDiff);
         }
 
         //---------------------------------------------------------------------
@@ -83,6 +121,31 @@ namespace OpenCppCoverage.VSPackage.Settings.UI
                 ExcludedModulePaths = this.Settings.ExcludedModulePatterns.ToStringList(),
                 UnifiedDiffs = this.Settings.UnifiedDiffs
             };
+        }
+
+        //---------------------------------------------------------------------
+        static void AddPatterns(
+            ObservableCollection<BindableString> target,
+            IEnumerable<string> patterns)
+        {
+            foreach (var pattern in patterns.Where(p => !string.IsNullOrWhiteSpace(p)))
+                target.Add(new BindableString(pattern));
+        }
+
+        //---------------------------------------------------------------------
+        static void MergePatterns(
+            ObservableCollection<BindableString> target,
+            IEnumerable<BindableString> source)
+        {
+            foreach (var value in source ?? Enumerable.Empty<BindableString>())
+            {
+                var pattern = value?.Value;
+                if (string.IsNullOrWhiteSpace(pattern))
+                    continue;
+
+                if (!target.Any(existing => string.Equals(existing.Value, pattern)))
+                    target.Add(new BindableString(pattern));
+            }
         }
     }
 }

@@ -29,3 +29,4 @@ OpenCover.xml
 
 # Ignore the assembly included by source.extension.vsixmanifest
 Newtonsoft.Json.dll
+/VS2026_MIGRATION_NOTES.txt

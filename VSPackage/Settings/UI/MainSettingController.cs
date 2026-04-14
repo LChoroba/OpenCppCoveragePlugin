@@ -17,6 +17,8 @@
 using GalaSoft.MvvmLight.Command;
 using OpenCppCoverage.VSPackage.Helper;
 using System;
+using System.IO;
+using System.Linq;
 using System.Windows.Controls;
 using System.Windows.Input;
 
@@ -27,7 +29,7 @@ namespace OpenCppCoverage.VSPackage.Settings.UI
     {
         readonly IOpenCppCoverageCmdLine openCppCoverageCmdLine;
         readonly ISettingsStorage settingsStorage;
-        readonly CoverageRunner coverageRunner;
+        readonly Action<MainSettings> runCoverageAction;
         readonly IStartUpProjectSettingsBuilder startUpProjectSettingsBuilder;
 
         string selectedProjectPath;
@@ -40,7 +42,7 @@ namespace OpenCppCoverage.VSPackage.Settings.UI
             ISettingsStorage settingsStorage,
             IOpenCppCoverageCmdLine openCppCoverageCmdLine,
             IStartUpProjectSettingsBuilder startUpProjectSettingsBuilder,
-            CoverageRunner coverageRunner)
+            Action<MainSettings> runCoverageAction)
         {
             this.settingsStorage = settingsStorage;
             this.openCppCoverageCmdLine = openCppCoverageCmdLine;
@@ -56,7 +58,7 @@ namespace OpenCppCoverage.VSPackage.Settings.UI
             this.ImportExportSettingController = new ImportExportSettingController();
             this.MiscellaneousSettingController = new MiscellaneousSettingController();
 
-            this.coverageRunner = coverageRunner;
+            this.runCoverageAction = runCoverageAction;
             this.startUpProjectSettingsBuilder = startUpProjectSettingsBuilder;
         }
 
@@ -70,7 +72,14 @@ namespace OpenCppCoverage.VSPackage.Settings.UI
             this.solutionConfigurationName = settings.SolutionConfigurationName;
             this.kind = kind;
 
-            var uiSettings = this.settingsStorage.TryLoad(this.selectedProjectPath, this.solutionConfigurationName);
+            UserInterfaceSettings uiSettings = null;
+            try
+            {
+                uiSettings = this.settingsStorage.TryLoad(this.selectedProjectPath, this.solutionConfigurationName);
+            }
+            catch
+            {
+            }
 
             if (uiSettings != null)
             {
@@ -112,12 +121,18 @@ namespace OpenCppCoverage.VSPackage.Settings.UI
         //---------------------------------------------------------------------
         public MainSettings GetMainSettings()
         {
+            var miscellaneousSettings = this.MiscellaneousSettingController.GetSettings();
+            var importExportSettings = this.ImportExportSettingController.GetSettings();
+
+            if (miscellaneousSettings.EnableDiagnosticBinaryExport)
+                EnsureDiagnosticBinaryExport(importExportSettings);
+
             return new MainSettings
             {
                 BasicSettings = this.BasicSettingController.GetSettings(),
                 FilterSettings = this.FilterSettingController.GetSettings(),
-                ImportExportSettings = this.ImportExportSettingController.GetSettings(),
-                MiscellaneousSettings = this.MiscellaneousSettingController.GetSettings(),
+                ImportExportSettings = importExportSettings,
+                MiscellaneousSettings = miscellaneousSettings,
                 DisplayProgramOutput = this.displayProgramOutput
             };
         }
@@ -159,7 +174,10 @@ namespace OpenCppCoverage.VSPackage.Settings.UI
         //---------------------------------------------------------------------
         void OnRunCoverageCommand()
         {
-            this.coverageRunner.RunCoverageOnStartupProject(this.GetMainSettings());
+            if (this.runCoverageAction == null)
+                throw new VSPackageException("Coverage runner is not available.");
+
+            this.runCoverageAction(this.GetMainSettings());
         }
 
         //---------------------------------------------------------------------
@@ -169,5 +187,53 @@ namespace OpenCppCoverage.VSPackage.Settings.UI
         public ICommand CloseCommand { get; }
         public ICommand RunCoverageCommand { get; }
         public ICommand ResetToDefaultCommand { get; }
+
+        //---------------------------------------------------------------------
+        void EnsureDiagnosticBinaryExport(ImportExportSettings settings)
+        {
+            if (settings == null)
+                return;
+
+            if (settings.Exports != null && settings.Exports.Any(export =>
+                export != null
+                && export.Type == ImportExportSettings.Type.Binary
+                && !string.IsNullOrWhiteSpace(export.Path)))
+            {
+                return;
+            }
+
+            var defaultPath = BuildDefaultBinaryExportPath(this.selectedProjectPath);
+            if (string.IsNullOrWhiteSpace(defaultPath))
+                return;
+
+            var exports = (settings.Exports ?? Enumerable.Empty<ImportExportSettings.Export>()).ToList();
+            exports.Add(new ImportExportSettings.Export
+            {
+                Type = ImportExportSettings.Type.Binary,
+                Path = defaultPath
+            });
+            settings.Exports = exports;
+        }
+
+        //---------------------------------------------------------------------
+        static string BuildDefaultBinaryExportPath(string projectPath)
+        {
+            if (string.IsNullOrWhiteSpace(projectPath))
+                return null;
+
+            try
+            {
+                var projectDirectory = Path.GetDirectoryName(projectPath);
+                var projectName = Path.GetFileNameWithoutExtension(projectPath);
+                if (string.IsNullOrWhiteSpace(projectDirectory) || string.IsNullOrWhiteSpace(projectName))
+                    return null;
+
+                return Path.Combine(projectDirectory, $"OpenCppCoverage-{projectName}.cov");
+            }
+            catch
+            {
+                return null;
+            }
+        }
     }
 }

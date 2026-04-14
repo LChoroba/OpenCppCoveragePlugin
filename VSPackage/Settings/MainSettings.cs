@@ -99,5 +99,7 @@ namespace OpenCppCoverage.VSPackage.Settings
         public string OptionalConfigFile { get; set; }
         public LogType LogTypeValue { get; set; }
         public bool ContinueAfterCppExceptions { get; set; }
+        public bool EnableDiagnosticBinaryExport { get; set; }
+        public bool EnableDiagnosticProcessLog { get; set; }
     }
 }

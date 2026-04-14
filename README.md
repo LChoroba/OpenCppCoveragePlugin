@@ -2,6 +2,26 @@
 # OpenCppCoveragePlugin
 Official Visual Studio Plugin for OpenCppCoverage
 
+## VS2026 Fork Note
+
+This repository is based on the Mato-89 Visual Studio 2022 fork of `OpenCppCoveragePlugin` and extends it towards practical usability with Visual Studio 2026.
+
+Main changes compared to the Mato-89 fork:
+- more defensive handling of Visual Studio automation / VC project objects
+- more robust `ProgramToRun` resolution using:
+  `DebugSettings.Command -> PrimaryOutput -> TargetPath -> OutDir/TargetName/TargetExt -> MSBuild evaluation`
+- old fragile `project.Files` / `VCProjectEngine`-based file discovery intentionally kept disabled
+- empty persisted startup settings no longer overwrite auto-detected values
+- optional persistent diagnostic `.cov` export
+- optional persistent OpenCppCoverage process log
+- pragmatic default source excludes to reduce noise from Boost, toolchain and third-party headers
+
+Important note:
+This fork prioritizes stable and conservative behavior under Visual Studio 2026 over restoring older automation-heavy logic that proved unreliable or unstable.
+
+Known limitation:
+Source-root detection for build-tree-generated projects is still not fully general and remains an area for future improvement.
+
 **OpenCppCoverage** is an open source code coverage tool for C++ under Windows. You can find more information about this project [here](https://opencppcoverage.codeplex.com/).
 
 This repository contains only the Visual Studio plugin sources.
