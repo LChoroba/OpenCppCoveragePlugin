@@ -16,6 +16,7 @@
 
 using EnvDTE;
 using System.Collections.Generic;
+using System.Runtime.InteropServices;
 
 namespace OpenCppCoverage.VSPackage
 {
@@ -33,7 +34,14 @@ namespace OpenCppCoverage.VSPackage
         {
             get
             {
-                return project_.UniqueName;
+                try
+                {
+                    return project_.UniqueName;
+                }
+                catch (COMException)
+                {
+                    return null;
+                }
             }
         }
 
@@ -42,7 +50,14 @@ namespace OpenCppCoverage.VSPackage
         {
             get
             {
-                return project_.FullName;
+                try
+                {
+                    return project_.FullName;
+                }
+                catch (COMException)
+                {
+                    return null;
+                }
             }
         }
 

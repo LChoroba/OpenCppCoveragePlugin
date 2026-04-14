@@ -29,11 +29,11 @@ namespace OpenCppCoverage.VSPackage
     /// </summary>
     class PackageInterfaces : IServiceProvider, IWindowFinder
     {        
-        readonly Package package;
+        readonly AsyncPackage package;
         readonly Func<Type, object> getService;
 
         //---------------------------------------------------------------------
-        public PackageInterfaces(Package package, Func<Type, object> getService)
+        public PackageInterfaces(AsyncPackage package, Func<Type, object> getService)
         {
             this.package = package;
             this.getService = getService;

@@ -42,9 +42,26 @@ namespace OpenCppCoverage.VSPackage
         //---------------------------------------------------------------------
         public void OpenSettingsWindow(ProjectSelectionKind kind)
         {
-            this.RunCommand(mainWindowsManager =>
-                mainWindowsManager.OpenSettingsWindow(kind)
-            );
+            IVsUIShell uiShell = (IVsUIShell)serviceProvider.GetService(typeof(SVsUIShell));
+
+            var errorHandler = new ErrorHandler(uiShell);
+            errorHandler.Execute(() =>
+            {
+                var dte = (DTE2)serviceProvider.GetService(typeof(EnvDTE.DTE));
+                var configurationManager = new ConfigurationManager();
+                var settingsBuilder = new StartUpProjectSettingsBuilder(dte, configurationManager);
+                var openCppCoverageCmdLine = new OpenCppCoverageCmdLine(this.configFile);
+                var mainSettingController = new MainSettingController(
+                    new SettingsStorage(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData)),
+                    openCppCoverageCmdLine,
+                    settingsBuilder,
+                    settings => CreateCoverageRunner(errorHandler).RunCoverageOnStartupProject(settings));
+
+                mainSettingController.UpdateFields(kind, true);
+
+                var mainWindowsManager = new MainWindowsManager(windowFinder, mainSettingController);
+                mainWindowsManager.OpenSettingsWindow(kind);
+            });
         }
 
         //---------------------------------------------------------------------
@@ -71,34 +88,41 @@ namespace OpenCppCoverage.VSPackage
             var errorHandler = new ErrorHandler(uiShell);
             errorHandler.Execute(() =>
             {
+                var coverageRunner = CreateCoverageRunner(errorHandler);
                 var dte = (DTE2)serviceProvider.GetService(typeof(EnvDTE.DTE));
-                var outputWindow = (IVsOutputWindow)serviceProvider.GetService(typeof(SVsOutputWindow));
-                var outputWriter = new OutputWindowWriter(dte, outputWindow);
-
-                errorHandler.OutputWriter = outputWriter;
-                var coverageViewManager = GetCoverageViewManager(serviceProvider);
-                var coverageTreeManager = new CoverageTreeManager(windowFinder);
-                var projectBuilder = new ProjectBuilder(dte, errorHandler, outputWriter);
-                var deserializer = new CoverageDataDeserializer();
-                var openCppCoverageCmdLine = new OpenCppCoverageCmdLine(this.configFile);
-                var openCppCoverageRunner = new OpenCppCoverageRunner(outputWriter, openCppCoverageCmdLine);
-
-                var coverageRunner = new CoverageRunner(
-                    dte, outputWriter, coverageTreeManager, projectBuilder,
-                    coverageViewManager, deserializer, errorHandler, openCppCoverageRunner);
-
                 var configurationManager = new ConfigurationManager();
                 var settingsBuilder = new StartUpProjectSettingsBuilder(dte, configurationManager);
+                var openCppCoverageCmdLine = new OpenCppCoverageCmdLine(this.configFile);
                 var mainSettingController = new MainSettingController(
                     new SettingsStorage(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData)),
                     openCppCoverageCmdLine,
                     settingsBuilder,
-                    coverageRunner);
+                    settings => coverageRunner.RunCoverageOnStartupProject(settings));
 
                 var mainWindowsManager = new MainWindowsManager(windowFinder, mainSettingController);
 
                 action(mainWindowsManager);
             });
+        }
+
+        //---------------------------------------------------------------------
+        CoverageRunner CreateCoverageRunner(ErrorHandler errorHandler)
+        {
+            var dte = (DTE2)serviceProvider.GetService(typeof(EnvDTE.DTE));
+            var outputWindow = (IVsOutputWindow)serviceProvider.GetService(typeof(SVsOutputWindow));
+            var outputWriter = new OutputWindowWriter(dte, outputWindow);
+
+            errorHandler.OutputWriter = outputWriter;
+            var coverageViewManager = GetCoverageViewManager(serviceProvider);
+            var coverageTreeManager = new CoverageTreeManager(windowFinder);
+            var projectBuilder = new ProjectBuilder(dte, errorHandler, outputWriter);
+            var deserializer = new CoverageDataDeserializer();
+            var openCppCoverageCmdLine = new OpenCppCoverageCmdLine(this.configFile);
+            var openCppCoverageRunner = new OpenCppCoverageRunner(outputWriter, openCppCoverageCmdLine);
+
+            return new CoverageRunner(
+                dte, outputWriter, coverageTreeManager, projectBuilder,
+                coverageViewManager, deserializer, errorHandler, openCppCoverageRunner);
         }
 
         //---------------------------------------------------------------------

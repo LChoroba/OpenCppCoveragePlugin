@@ -97,6 +97,7 @@ namespace OpenCppCoverage.VSPackage.Settings.UI
                 get { return this.optimizedBuild; }
                 set { this.SetField(ref this.optimizedBuild, value); }
             }
+
         }
 
         //---------------------------------------------------------------------
@@ -172,10 +173,25 @@ namespace OpenCppCoverage.VSPackage.Settings.UI
         //-----------------------------------------------------------------
         public void UpdateSettings(SettingsData settings)
         {
-            this.BasicSettings = settings.Data;
+            if (settings?.Data == null)
+                return;
+
+            if (!string.IsNullOrWhiteSpace(settings.Data.ProgramToRun))
+                this.BasicSettings.ProgramToRun = settings.Data.ProgramToRun;
+
+            if (!string.IsNullOrWhiteSpace(settings.Data.OptionalWorkingDirectory))
+                this.BasicSettings.OptionalWorkingDirectory = settings.Data.OptionalWorkingDirectory;
+
+            if (!string.IsNullOrWhiteSpace(settings.Data.Arguments))
+                this.BasicSettings.Arguments = settings.Data.Arguments;
+
+            this.BasicSettings.CompileBeforeRunning = settings.Data.CompileBeforeRunning;
+            this.BasicSettings.OptimizedBuild = settings.Data.OptimizedBuild;
+
             foreach (var project in this.SelectableProjects)
             {
-                if (settings.IsSelectedByProjectPath.TryGetValue(project.FullName, out bool isSelected))
+                if (settings.IsSelectedByProjectPath != null
+                    && settings.IsSelectedByProjectPath.TryGetValue(project.FullName, out bool isSelected))
                     project.IsSelected = isSelected;
             }
             this.HasWorkingDirectory = !string.IsNullOrEmpty(this.BasicSettings.OptionalWorkingDirectory);
@@ -202,10 +218,28 @@ namespace OpenCppCoverage.VSPackage.Settings.UI
                 .Where(p => p.IsSelected)
                 .Select(p => p.Project)
                 .ToList();
+            var modulePaths = selectedProjects
+                .Select(project => project.ModulePath)
+                .Where(path => !string.IsNullOrWhiteSpace(path))
+                .ToList();
+            var sourcePaths = selectedProjects
+                .SelectMany(project => project.SourcePaths)
+                .Where(path => !string.IsNullOrWhiteSpace(path))
+                .ToList();
+
+            // In the VS2026 fallback path we can only determine the startup module
+            // reliably. Passing that single module over-filters coverage to the
+            // test executable, so prefer broad module collection in that case.
+            if (modulePaths.Count <= 1)
+            {
+                modulePaths.Clear();
+                sourcePaths.Clear();
+            }
+
             return new BasicSettings
             {
-                ModulePaths = selectedProjects.Select(project => project.ModulePath),
-                SourcePaths = selectedProjects.SelectMany(project => project.SourcePaths),
+                ModulePaths = modulePaths,
+                SourcePaths = sourcePaths,
                 Arguments = this.BasicSettings.Arguments,
                 ProgramToRun = this.BasicSettings.ProgramToRun,
                 CompileBeforeRunning = this.BasicSettings.CompileBeforeRunning,
@@ -216,6 +250,8 @@ namespace OpenCppCoverage.VSPackage.Settings.UI
                 EnvironmentVariables = this.EnvironmentVariables
             };
         }
+
+
 
         //---------------------------------------------------------------------
         List<SelectableProject> selectableProjects;

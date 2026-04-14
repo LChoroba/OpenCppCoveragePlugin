@@ -14,6 +14,8 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+using System;
+
 namespace OpenCppCoverage.VSPackage
 {
     class DynamicVCConfiguration
@@ -22,7 +24,10 @@ namespace OpenCppCoverage.VSPackage
         public DynamicVCConfiguration(dynamic configuration)
         {
             this.configuration_ = configuration;
-            this.DebugSettings = new DynamicVCDebugSettings(configuration_.DebugSettings);
+            if (TryGetValue(() => configuration_.DebugSettings, out var debugSettings) && debugSettings != null)
+                this.DebugSettings = new DynamicVCDebugSettings(debugSettings);
+            else
+                this.DebugSettings = new DynamicVCDebugSettings(null);
 
             var compilerTool = GetTool(configuration, "VCCLCompilerTool");
             if (compilerTool != null)
@@ -32,9 +37,14 @@ namespace OpenCppCoverage.VSPackage
         //---------------------------------------------------------------------
         static dynamic GetTool(dynamic configuration, string toolKindToFind)
         {
-            foreach (dynamic tool in configuration.Tools)
+            object tools;
+            if (!TryGetValue<object>(() => configuration.Tools, out tools) || tools == null)
+                return null;
+
+            foreach (dynamic tool in (dynamic)tools)
             {
-                if (tool.ToolKind == toolKindToFind)
+                string toolKind = null;
+                if (tool != null && TryGetValue<string>(() => tool.ToolKind, out toolKind) && toolKind == toolKindToFind)
                     return tool;
             }
 
@@ -46,7 +56,8 @@ namespace OpenCppCoverage.VSPackage
         {
             get
             {
-                return configuration_.ConfigurationName;
+                string value;
+                return TryGetValue<string>(() => configuration_.ConfigurationName, out value) ? value : null;
             }
         }
 
@@ -55,14 +66,16 @@ namespace OpenCppCoverage.VSPackage
         {
             get
             {
-                return configuration_.Platform.Name;
+                string value;
+                return TryGetValue<string>(() => configuration_.Platform.Name, out value) ? value : null;
             }
         }
 
         //---------------------------------------------------------------------
         public string Evaluate(string str)
         {
-            return configuration_.Evaluate(str);
+            string value;
+            return TryGetValue<string>(() => configuration_.Evaluate(str), out value) ? value : str;
         }
 
         //---------------------------------------------------------------------
@@ -76,10 +89,26 @@ namespace OpenCppCoverage.VSPackage
         {
             get
             {
-                return configuration_.PrimaryOutput;
+                string value;
+                return TryGetValue<string>(() => configuration_.PrimaryOutput, out value) ? value : null;
             }
         }
 
         readonly dynamic configuration_;
+
+        //---------------------------------------------------------------------
+        static bool TryGetValue<T>(Func<T> getter, out T value)
+        {
+            try
+            {
+                value = getter();
+                return true;
+            }
+            catch
+            {
+                value = default(T);
+                return false;
+            }
+        }
     }
 }

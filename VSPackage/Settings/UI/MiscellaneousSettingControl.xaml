@@ -31,6 +31,8 @@
                 <RowDefinition Height="auto"/>
                 <RowDefinition Height="auto"/>
                 <RowDefinition Height="auto"/>
+                <RowDefinition Height="auto"/>
+                <RowDefinition Height="auto"/>
             </Grid.RowDefinitions>
             <Label Content="Log verbosity" Grid.Row="0"/>
             <ComboBox 
@@ -58,6 +60,20 @@
                 IsChecked="{Binding Settings.ContinueAfterCppExceptions}" 
                 VerticalAlignment="Center" 
                 Grid.Row="2" Grid.Column="1"
+                Margin="0 5 0 5"/>
+
+            <Label Content="Enable diagnostic .cov export" Grid.Row="3"/>
+            <CheckBox
+                IsChecked="{Binding Settings.EnableDiagnosticBinaryExport}"
+                VerticalAlignment="Center"
+                Grid.Row="3" Grid.Column="1"
+                Margin="0 5 0 5"/>
+
+            <Label Content="Enable diagnostic process log" Grid.Row="4"/>
+            <CheckBox
+                IsChecked="{Binding Settings.EnableDiagnosticProcessLog}"
+                VerticalAlignment="Center"
+                Grid.Row="4" Grid.Column="1"
                 Margin="0 5 0 5"/>
         </Grid>
     </ScrollViewer>

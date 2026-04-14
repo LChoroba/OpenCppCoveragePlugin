@@ -50,6 +50,22 @@ namespace OpenCppCoverage.VSPackage.Settings.UI
                 set { this.SetField(ref this.continueAfterCppExceptions, value); }
             }
 
+            //---------------------------------------------------------------------
+            bool enableDiagnosticBinaryExport;
+            public bool EnableDiagnosticBinaryExport
+            {
+                get { return this.enableDiagnosticBinaryExport; }
+                set { this.SetField(ref this.enableDiagnosticBinaryExport, value); }
+            }
+
+            //---------------------------------------------------------------------
+            bool enableDiagnosticProcessLog;
+            public bool EnableDiagnosticProcessLog
+            {
+                get { return this.enableDiagnosticProcessLog; }
+                set { this.SetField(ref this.enableDiagnosticProcessLog, value); }
+            }
+
         }
 
         //---------------------------------------------------------------------
@@ -73,8 +89,10 @@ namespace OpenCppCoverage.VSPackage.Settings.UI
         {
             this.HasConfigFile = false;
             this.Settings.OptionalConfigFile = null;
-            this.Settings.LogTypeValue = MiscellaneousSettings.LogType.Normal;
+            this.Settings.LogTypeValue = MiscellaneousSettings.LogType.Verbose;
             this.Settings.ContinueAfterCppExceptions = false;
+            this.Settings.EnableDiagnosticBinaryExport = false;
+            this.Settings.EnableDiagnosticProcessLog = false;
         }
 
         //---------------------------------------------------------------------
@@ -91,7 +109,9 @@ namespace OpenCppCoverage.VSPackage.Settings.UI
             {
                 OptionalConfigFile = this.Settings.OptionalConfigFile,
                 LogTypeValue = this.Settings.LogTypeValue,
-                ContinueAfterCppExceptions = this.Settings.ContinueAfterCppExceptions
+                ContinueAfterCppExceptions = this.Settings.ContinueAfterCppExceptions,
+                EnableDiagnosticBinaryExport = this.Settings.EnableDiagnosticBinaryExport,
+                EnableDiagnosticProcessLog = this.Settings.EnableDiagnosticProcessLog
             };
         }
 

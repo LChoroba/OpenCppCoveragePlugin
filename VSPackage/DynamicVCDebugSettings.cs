@@ -14,6 +14,8 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+using System;
+
 namespace OpenCppCoverage.VSPackage
 {
     class DynamicVCDebugSettings
@@ -29,7 +31,7 @@ namespace OpenCppCoverage.VSPackage
         {
             get
             {
-                return settings_.WorkingDirectory;
+                return TryGetValue(() => settings_.WorkingDirectory);
             }
         }
 
@@ -38,7 +40,7 @@ namespace OpenCppCoverage.VSPackage
         {
             get
             {
-                return settings_.CommandArguments;
+                return TryGetValue(() => settings_.CommandArguments);
             }
         }
 
@@ -47,11 +49,24 @@ namespace OpenCppCoverage.VSPackage
         {
             get
             {
-                return settings_.Command;
+                return TryGetValue(() => settings_.Command);
             }
         }
 
 
         readonly dynamic settings_;
+
+        //---------------------------------------------------------------------
+        static string TryGetValue(Func<string> getter)
+        {
+            try
+            {
+                return getter();
+            }
+            catch
+            {
+                return null;
+            }
+        }
     }
 }

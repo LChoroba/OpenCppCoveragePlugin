@@ -15,7 +15,6 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 using Microsoft.VisualStudio.TestTools.UnitTesting;
-using Microsoft.VSSDK.Tools.VsIdeTesting;
 using System;
 
 namespace VSPackage_UnitTests
@@ -25,11 +24,7 @@ namespace VSPackage_UnitTests
         //---------------------------------------------------------------------
         public static void RunInUIhread(Action action)
         {
-            var shouldRunInUIThread = VsIdeTestHostContext.Dte != null;
-            if (shouldRunInUIThread)
-                UIThreadInvoker.Invoke(action);
-            else
-                action();
+            action();
         }
 
         //---------------------------------------------------------------------

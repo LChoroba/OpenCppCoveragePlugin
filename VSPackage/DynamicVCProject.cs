@@ -15,6 +15,7 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 using System.Collections.Generic;
+using System.Runtime.InteropServices;
 
 namespace OpenCppCoverage.VSPackage
 {
@@ -32,8 +33,17 @@ namespace OpenCppCoverage.VSPackage
             get
             {
                 var configurations = new List<DynamicVCConfiguration>();
-                foreach (var configuration in project_.Configurations)
-                    configurations.Add(new DynamicVCConfiguration(configuration));
+                try
+                {
+                    foreach (var configuration in project_.Configurations)
+                    {
+                        if (configuration != null)
+                            configurations.Add(new DynamicVCConfiguration(configuration));
+                    }
+                }
+                catch (COMException)
+                {
+                }
 
                 return configurations;
             }
@@ -45,8 +55,17 @@ namespace OpenCppCoverage.VSPackage
             get
             {
                 var files = new List<DynamicVCFile>();
-                foreach (var file in project_.Files)
-                    files.Add(new DynamicVCFile(file));
+                try
+                {
+                    foreach (var file in project_.Files)
+                    {
+                        if (file != null)
+                            files.Add(new DynamicVCFile(file));
+                    }
+                }
+                catch (COMException)
+                {
+                }
                 return files;
             }
         }

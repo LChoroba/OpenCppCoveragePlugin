@@ -29,7 +29,14 @@ namespace OpenCppCoverage.VSPackage
         {
             get
             {
-                return (int)compilerTool.Optimization == (int)OptimizeOption.optimizeDisabled;
+                try
+                {
+                    return (int)compilerTool.Optimization == (int)OptimizeOption.optimizeDisabled;
+                }
+                catch
+                {
+                    return false;
+                }
             }
         }
 

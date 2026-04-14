@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<RunSettings>
+  <RunConfiguration>
+    <TargetFrameworkVersion>.NETFramework,Version=v4.7.2</TargetFrameworkVersion>
+    <TargetPlatform>x64</TargetPlatform>
+  </RunConfiguration>
+  <MSTest>
+    <AssemblyResolution>
+      <Directory path="%TestDir%" includeSubDirectories="true" />
+    </AssemblyResolution>
+  </MSTest>
+</RunSettings>
