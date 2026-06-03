@@ -55,6 +55,10 @@ namespace OpenCppCoverage.VSPackage.Settings
                     if (settings != null)
                         return settings;
                 }
+
+                var cmakeSettings = ComputeOptionalCMakeSettingsFromActiveDocument();
+                if (cmakeSettings != null)
+                    return cmakeSettings;
             }
             catch (COMException)
             {
@@ -67,6 +71,43 @@ namespace OpenCppCoverage.VSPackage.Settings
             }
 
             return CreateEmptySettings();
+        }
+
+        //---------------------------------------------------------------------
+        StartUpProjectSettings ComputeOptionalCMakeSettingsFromActiveDocument()
+        {
+            var activeDocumentPath = GetActiveDocumentPath();
+            var cmakeCommand = ResolveProgramToRunFromCMake(
+                null,
+                null,
+                activeDocumentPath,
+                null);
+
+            if (string.IsNullOrWhiteSpace(cmakeCommand))
+                return null;
+
+            var sourcePaths = BuildCMakeSourcePaths(activeDocumentPath, cmakeCommand).ToList();
+
+            return new StartUpProjectSettings
+            {
+                WorkingDir = GetDirectoryNameSafe(cmakeCommand),
+                Arguments = string.Empty,
+                Command = cmakeCommand,
+                SolutionConfigurationName = null,
+                ProjectName = null,
+                ProjectPath = activeDocumentPath,
+                CppProjects = new[]
+                {
+                    new StartUpProjectSettings.CppProject
+                    {
+                        ModulePath = cmakeCommand,
+                        SourcePaths = sourcePaths,
+                        Path = activeDocumentPath
+                    }
+                },
+                IsOptimizedBuildEnabled = IsLikelyOptimizedCMakeBuild(cmakeCommand),
+                EnvironmentVariables = new List<KeyValuePair<string, string>>()
+            };
         }
 
         //---------------------------------------------------------------------
@@ -123,7 +164,21 @@ namespace OpenCppCoverage.VSPackage.Settings
             var debugSettingsCommand = startupConfiguration.Evaluate(rawCommand);
             var composedCommand = startupConfiguration.Evaluate("$(OutDir)$(TargetName)$(TargetExt)");
 
-            var evaluatedCommand = FirstNonEmpty(
+            var evaluatedCommand = FirstExistingRunnable(
+                debugSettingsCommand,
+                primaryOutput,
+                targetPath,
+                composedCommand,
+                msbuildCommand);
+            var cmakeCommand = ResolveProgramToRunFromCMake(
+                project.Path,
+                project.UniqueName,
+                GetActiveDocumentPath(),
+                targetName);
+
+            evaluatedCommand = FirstNonEmpty(
+                evaluatedCommand,
+                cmakeCommand,
                 debugSettingsCommand,
                 primaryOutput,
                 targetPath,
@@ -133,6 +188,7 @@ namespace OpenCppCoverage.VSPackage.Settings
             var evaluatedWorkingDirectory = FirstNonEmpty(
                 startupConfiguration.Evaluate(rawWorkingDirectory),
                 targetDir,
+                GetDirectoryNameSafe(cmakeCommand),
                 GetDirectoryNameSafe(evaluatedCommand),
                 GetDirectoryNameSafe(project.Path));
 
@@ -155,6 +211,7 @@ namespace OpenCppCoverage.VSPackage.Settings
                 diagnostics.AppendLine($"$(TargetName): {targetName ?? "<null>"}");
                 diagnostics.AppendLine($"$(TargetExt): {targetExt ?? "<null>"}");
                 diagnostics.AppendLine($"$(TargetDir): {targetDir ?? "<null>"}");
+                diagnostics.AppendLine($"CMake/Ninja command: {cmakeCommand ?? "<null>"}");
                 throw new VSPackageException(diagnostics.ToString());
             }
 
@@ -167,7 +224,10 @@ namespace OpenCppCoverage.VSPackage.Settings
                 ProjectName = project.UniqueName,
                 ProjectPath = project.Path,
                 CppProjects = BuildStableCppProjects(project, evaluatedCommand, primaryOutput),
-                IsOptimizedBuildEnabled = false,
+                IsOptimizedBuildEnabled = IsLikelyOptimizedBuild(
+                    activeConfiguration.Name,
+                    evaluatedCommand,
+                    cmakeCommand),
                 EnvironmentVariables = new List<KeyValuePair<string, string>>()
             };
         }
@@ -177,11 +237,67 @@ namespace OpenCppCoverage.VSPackage.Settings
         {
             foreach (var value in values)
             {
-                if (!string.IsNullOrWhiteSpace(value))
+                if (!string.IsNullOrWhiteSpace(value) && !ContainsUnresolvedMacro(value))
                     return value;
             }
 
             return null;
+        }
+
+        //---------------------------------------------------------------------
+        static bool ContainsUnresolvedMacro(string value)
+        {
+            return !string.IsNullOrWhiteSpace(value)
+                && value.Contains("$(");
+        }
+
+        //---------------------------------------------------------------------
+        static string FirstExistingRunnable(params string[] values)
+        {
+            foreach (var value in values)
+            {
+                if (IsExistingRunnable(value))
+                    return NormalizeCommandPath(value);
+            }
+
+            return null;
+        }
+
+        //---------------------------------------------------------------------
+        static bool IsExistingRunnable(string path)
+        {
+            path = NormalizeCommandPath(path);
+
+            if (string.IsNullOrWhiteSpace(path))
+                return false;
+
+            try
+            {
+                var extension = Path.GetExtension(path);
+                return File.Exists(path)
+                    && (string.Equals(extension, ".exe", StringComparison.OrdinalIgnoreCase)
+                     || string.Equals(extension, ".com", StringComparison.OrdinalIgnoreCase)
+                     || string.Equals(extension, ".bat", StringComparison.OrdinalIgnoreCase)
+                     || string.Equals(extension, ".cmd", StringComparison.OrdinalIgnoreCase));
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        //---------------------------------------------------------------------
+        static string NormalizeCommandPath(string path)
+        {
+            if (string.IsNullOrWhiteSpace(path))
+                return path;
+
+            path = path.Trim();
+
+            if (path.Length >= 2 && path[0] == '"' && path[path.Length - 1] == '"')
+                return path.Substring(1, path.Length - 2);
+
+            return path;
         }
 
         //---------------------------------------------------------------------
@@ -249,6 +365,419 @@ namespace OpenCppCoverage.VSPackage.Settings
             }
 
             return null;
+        }
+
+        //---------------------------------------------------------------------
+        internal static string ResolveProgramToRunFromCMake(
+            string projectPath,
+            string projectUniqueName,
+            string selectedDocumentPath,
+            string targetName)
+        {
+            var targetFileNames = BuildCMakeTargetFileNames(
+                projectPath,
+                projectUniqueName,
+                selectedDocumentPath,
+                targetName).ToList();
+
+            if (!targetFileNames.Any())
+                return null;
+
+            foreach (var buildDirectory in FindCMakeBuildDirectories(projectPath, selectedDocumentPath))
+            {
+                foreach (var targetFileName in targetFileNames)
+                {
+                    var path = Path.Combine(buildDirectory, targetFileName);
+                    if (IsExistingRunnable(path))
+                        return Path.GetFullPath(path);
+                }
+
+                foreach (var path in SafeEnumerateFiles(buildDirectory, "*.exe", 256))
+                {
+                    if (targetFileNames.Contains(Path.GetFileName(path), StringComparer.OrdinalIgnoreCase)
+                        && IsExistingRunnable(path))
+                        return Path.GetFullPath(path);
+                }
+            }
+
+            return null;
+        }
+
+        //---------------------------------------------------------------------
+        internal static bool IsLikelyOptimizedCMakeBuild(string commandPath)
+        {
+            return IsLikelyOptimizedBuild(null, commandPath, commandPath);
+        }
+
+        //---------------------------------------------------------------------
+        internal static IEnumerable<string> BuildCMakeSourcePaths(
+            string selectedDocumentPath,
+            string cmakeCommandPath)
+        {
+            var sourcePaths = new List<string>();
+            var cachePath = FindNearestCMakeCachePath(cmakeCommandPath);
+            foreach (var sourceDirectory in ReadCMakeSourceDirectories(cachePath))
+                AddDirectoryIfExists(sourcePaths, sourceDirectory);
+
+            if (!sourcePaths.Any())
+                AddDirectoryIfExists(sourcePaths, GetDirectoryNameSafe(selectedDocumentPath));
+            else if (!sourcePaths.Any(path => IsPathUnder(selectedDocumentPath, path)))
+                AddDirectoryIfExists(sourcePaths, GetDirectoryNameSafe(selectedDocumentPath));
+
+            return sourcePaths
+                .Where(path => !string.IsNullOrWhiteSpace(path))
+                .Distinct(StringComparer.OrdinalIgnoreCase);
+        }
+
+        //---------------------------------------------------------------------
+        static bool IsLikelyOptimizedBuild(
+            string configurationName,
+            string commandPath,
+            string cmakeCommandPath)
+        {
+            return ContainsOptimizedBuildMarker(configurationName)
+                || ContainsOptimizedBuildMarker(commandPath)
+                || ContainsOptimizedBuildMarker(cmakeCommandPath);
+        }
+
+        //---------------------------------------------------------------------
+        static bool ContainsOptimizedBuildMarker(string value)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+                return false;
+
+            var normalizedValue = value.Replace('\\', '/');
+            return ContainsPathPart(normalizedValue, "release")
+                || ContainsPathPart(normalizedValue, "relwithdebinfo")
+                || ContainsPathPart(normalizedValue, "minsizerel");
+        }
+
+        //---------------------------------------------------------------------
+        static bool ContainsPathPart(string path, string value)
+        {
+            return path
+                .Split(new[] { '/' }, StringSplitOptions.RemoveEmptyEntries)
+                .Any(part => string.Equals(part, value, StringComparison.OrdinalIgnoreCase));
+        }
+
+        //---------------------------------------------------------------------
+        static IEnumerable<string> BuildCMakeTargetFileNames(
+            string projectPath,
+            string projectUniqueName,
+            string selectedDocumentPath,
+            string targetName)
+        {
+            var names = new List<string>();
+
+            AddCMakeName(names, targetName);
+            AddCMakeName(names, Path.GetFileNameWithoutExtension(projectPath));
+            AddCMakeName(names, Path.GetFileNameWithoutExtension(projectUniqueName));
+
+            if (!string.IsNullOrWhiteSpace(selectedDocumentPath))
+            {
+                AddCMakeName(names, Path.GetFileName(selectedDocumentPath));
+                AddCMakeName(names, Path.GetFileNameWithoutExtension(selectedDocumentPath));
+            }
+
+            return names
+                .Where(name => !string.IsNullOrWhiteSpace(name))
+                .SelectMany(BuildCMakeExecutableFileNameVariants)
+                .Distinct(StringComparer.OrdinalIgnoreCase);
+        }
+
+        //---------------------------------------------------------------------
+        static IEnumerable<string> BuildCMakeExecutableFileNameVariants(string name)
+        {
+            if (name.EndsWith(".exe", StringComparison.OrdinalIgnoreCase))
+                name = name.Substring(0, name.Length - ".exe".Length);
+
+            yield return name + ".exe";
+            yield return name + "_d.exe";
+            yield return name + "_rg.exe";
+        }
+
+        //---------------------------------------------------------------------
+        static void AddCMakeName(List<string> names, string name)
+        {
+            if (string.IsNullOrWhiteSpace(name))
+                return;
+
+            name = name.Trim();
+            if (name.Contains("$(") || name.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0)
+                return;
+
+            names.Add(name);
+        }
+
+        //---------------------------------------------------------------------
+        static string FindNearestCMakeCachePath(string cmakeCommandPath)
+        {
+            foreach (var directory in GetAncestorDirectories(cmakeCommandPath))
+            {
+                var cachePath = Path.Combine(directory, "CMakeCache.txt");
+                if (File.Exists(cachePath))
+                    return cachePath;
+            }
+
+            return null;
+        }
+
+        //---------------------------------------------------------------------
+        static IEnumerable<string> ReadCMakeSourceDirectories(string cachePath)
+        {
+            var sourceDirectories = new List<string>();
+            string homeDirectory = null;
+
+            if (string.IsNullOrWhiteSpace(cachePath) || !File.Exists(cachePath))
+                return sourceDirectories;
+
+            try
+            {
+                foreach (var line in File.ReadLines(cachePath))
+                {
+                    var path = ReadCMakeCachePathValue(line);
+                    if (string.IsNullOrWhiteSpace(path))
+                        continue;
+
+                    if (line.StartsWith(
+                        "CMAKE_HOME_DIRECTORY:",
+                        StringComparison.OrdinalIgnoreCase))
+                    {
+                        homeDirectory = path;
+                    }
+                    else if (line.StartsWith(
+                        "CMAKE_SOURCE_DIR:",
+                        StringComparison.OrdinalIgnoreCase)
+                        || line.IndexOf("_SOURCE_DIR:", StringComparison.OrdinalIgnoreCase) >= 0)
+                    {
+                        sourceDirectories.Add(path);
+                    }
+                }
+            }
+            catch
+            {
+            }
+
+            if (!string.IsNullOrWhiteSpace(homeDirectory) && sourceDirectories.Count > 1)
+            {
+                sourceDirectories = sourceDirectories
+                    .Where(path => !string.Equals(path, homeDirectory, StringComparison.OrdinalIgnoreCase))
+                    .ToList();
+            }
+
+            if (!sourceDirectories.Any() && !string.IsNullOrWhiteSpace(homeDirectory))
+                sourceDirectories.Add(homeDirectory);
+
+            return sourceDirectories
+                .Where(path => !string.IsNullOrWhiteSpace(path))
+                .Distinct(StringComparer.OrdinalIgnoreCase);
+        }
+
+        //---------------------------------------------------------------------
+        static string ReadCMakeCachePathValue(string line)
+        {
+            if (string.IsNullOrWhiteSpace(line))
+                return null;
+
+            var separatorIndex = line.IndexOf('=');
+            if (separatorIndex < 0 || separatorIndex == line.Length - 1)
+                return null;
+
+            return GetFullPathSafe(line.Substring(separatorIndex + 1));
+        }
+
+        //---------------------------------------------------------------------
+        static string GetFullPathSafe(string path)
+        {
+            if (string.IsNullOrWhiteSpace(path))
+                return null;
+
+            try
+            {
+                return Path.GetFullPath(path);
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        //---------------------------------------------------------------------
+        static bool IsPathUnder(string path, string directory)
+        {
+            if (string.IsNullOrWhiteSpace(path) || string.IsNullOrWhiteSpace(directory))
+                return false;
+
+            var fullPath = GetFullPathSafe(path);
+            var fullDirectory = GetFullPathSafe(directory);
+            if (string.IsNullOrWhiteSpace(fullPath) || string.IsNullOrWhiteSpace(fullDirectory))
+                return false;
+
+            fullDirectory = EnsureTrailingSlash(fullDirectory);
+            return fullPath.StartsWith(fullDirectory, StringComparison.OrdinalIgnoreCase);
+        }
+
+        //---------------------------------------------------------------------
+        static void AddDirectoryIfExists(List<string> directories, string directory)
+        {
+            if (string.IsNullOrWhiteSpace(directory))
+                return;
+
+            try
+            {
+                if (Directory.Exists(directory))
+                    directories.Add(Path.GetFullPath(directory));
+            }
+            catch
+            {
+            }
+        }
+
+        //---------------------------------------------------------------------
+        static IEnumerable<string> FindCMakeBuildDirectories(string projectPath, string selectedDocumentPath)
+        {
+            var buildDirectories = new List<string>();
+
+            foreach (var directory in GetAncestorDirectories(projectPath)
+                .Concat(GetAncestorDirectories(selectedDocumentPath)))
+            {
+                if (HasCMakeBuildFiles(directory))
+                    buildDirectories.Add(directory);
+
+                foreach (var buildRootName in new[] { "out", "build", ".vs" })
+                {
+                    var buildRoot = Path.Combine(directory, buildRootName);
+                    if (!Directory.Exists(buildRoot))
+                        continue;
+
+                    foreach (var cachePath in SafeEnumerateFiles(buildRoot, "CMakeCache.txt", 64))
+                    {
+                        var buildDirectory = Path.GetDirectoryName(cachePath);
+                        if (!string.IsNullOrWhiteSpace(buildDirectory))
+                            buildDirectories.Add(buildDirectory);
+                    }
+
+                    foreach (var ninjaPath in SafeEnumerateFiles(buildRoot, "build.ninja", 64))
+                    {
+                        var buildDirectory = Path.GetDirectoryName(ninjaPath);
+                        if (!string.IsNullOrWhiteSpace(buildDirectory))
+                            buildDirectories.Add(buildDirectory);
+                    }
+                }
+            }
+
+            return buildDirectories
+                .Where(path => !string.IsNullOrWhiteSpace(path))
+                .Distinct(StringComparer.OrdinalIgnoreCase);
+        }
+
+        //---------------------------------------------------------------------
+        static bool HasCMakeBuildFiles(string directory)
+        {
+            if (string.IsNullOrWhiteSpace(directory))
+                return false;
+
+            try
+            {
+                return File.Exists(Path.Combine(directory, "CMakeCache.txt"))
+                    || File.Exists(Path.Combine(directory, "build.ninja"));
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        //---------------------------------------------------------------------
+        static IEnumerable<string> GetAncestorDirectories(string path)
+        {
+            if (string.IsNullOrWhiteSpace(path))
+                yield break;
+
+            DirectoryInfo directory = null;
+            try
+            {
+                directory = File.Exists(path)
+                    ? new FileInfo(path).Directory
+                    : new DirectoryInfo(path);
+            }
+            catch
+            {
+                yield break;
+            }
+
+            while (directory != null && directory.Parent != null)
+            {
+                yield return directory.FullName;
+                directory = directory.Parent;
+            }
+        }
+
+        //---------------------------------------------------------------------
+        static IEnumerable<string> SafeEnumerateFiles(
+            string directory,
+            string searchPattern,
+            int maximumResultCount)
+        {
+            var files = new List<string>();
+
+            if (string.IsNullOrWhiteSpace(directory) || maximumResultCount <= 0)
+                return files;
+
+            var pendingDirectories = new Stack<string>();
+            pendingDirectories.Push(directory);
+
+            while (pendingDirectories.Count > 0 && files.Count < maximumResultCount)
+            {
+                var currentDirectory = pendingDirectories.Pop();
+                string[] directoryFiles;
+                try
+                {
+                    directoryFiles = Directory.GetFiles(currentDirectory, searchPattern);
+                }
+                catch
+                {
+                    continue;
+                }
+
+                foreach (var file in directoryFiles)
+                {
+                    files.Add(file);
+                    if (files.Count >= maximumResultCount)
+                        break;
+                }
+
+                if (files.Count >= maximumResultCount)
+                    break;
+
+                string[] childDirectories;
+                try
+                {
+                    childDirectories = Directory.GetDirectories(currentDirectory);
+                }
+                catch
+                {
+                    continue;
+                }
+
+                foreach (var childDirectory in childDirectories)
+                    pendingDirectories.Push(childDirectory);
+            }
+
+            return files;
+        }
+
+        //---------------------------------------------------------------------
+        string GetActiveDocumentPath()
+        {
+            try
+            {
+                return dte?.ActiveDocument?.FullName;
+            }
+            catch
+            {
+                return null;
+            }
         }
 
         //---------------------------------------------------------------------

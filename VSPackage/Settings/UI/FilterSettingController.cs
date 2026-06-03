@@ -24,6 +24,15 @@ namespace OpenCppCoverage.VSPackage.Settings.UI
     //-------------------------------------------------------------------------
     class FilterSettingController: PropertyChangedNotifier
     {
+        static readonly string[] DefaultIncludedSourcePatterns =
+        {
+        };
+
+        static readonly string[] DefaultIncludedModulePatterns =
+        {
+            "*.exe"
+        };
+
         static readonly string[] DefaultExcludedSourcePatterns =
         {
             "*Microsoft Visual Studio*",
@@ -85,14 +94,22 @@ namespace OpenCppCoverage.VSPackage.Settings.UI
         //---------------------------------------------------------------------
         public void UpdateStartUpProject()
         {
+            ClearSettings();
+
+            AddPatterns(this.Settings.AdditionalSourcePatterns, DefaultIncludedSourcePatterns);
+            AddPatterns(this.Settings.AdditionalModulePatterns, DefaultIncludedModulePatterns);
+            AddPatterns(this.Settings.ExcludedSourcePatterns, DefaultExcludedSourcePatterns);
+            AddPatterns(this.Settings.ExcludedModulePatterns, DefaultExcludedModulePatterns);
+        }
+
+        //---------------------------------------------------------------------
+        public void ClearSettings()
+        {
             this.Settings.AdditionalSourcePatterns.Clear();
             this.Settings.AdditionalModulePatterns.Clear();
             this.Settings.ExcludedSourcePatterns.Clear();
             this.Settings.ExcludedModulePatterns.Clear();
             this.Settings.UnifiedDiffs.Clear();
-
-            AddPatterns(this.Settings.ExcludedSourcePatterns, DefaultExcludedSourcePatterns);
-            AddPatterns(this.Settings.ExcludedModulePatterns, DefaultExcludedModulePatterns);
         }
 
         //---------------------------------------------------------------------

@@ -36,6 +36,7 @@ namespace OpenCppCoverage.VSPackage.Settings.UI
         string solutionConfigurationName;
         bool displayProgramOutput;
         ProjectSelectionKind kind;
+        StartUpProjectSettings lastComputedStartUpProjectSettings;
 
         //---------------------------------------------------------------------
         public MainSettingController(
@@ -52,7 +53,7 @@ namespace OpenCppCoverage.VSPackage.Settings.UI
                 this.CloseWindowEvent?.Invoke(this, EventArgs.Empty);
             });
             this.ResetToDefaultCommand = new RelayCommand(
-                () => UpdateStartUpProject(ComputeStartUpProjectSettings(kind)));
+                () => UpdateStartUpProject(GetResetStartUpProjectSettings()));
             this.BasicSettingController = new BasicSettingController();
             this.FilterSettingController = new FilterSettingController();
             this.ImportExportSettingController = new ImportExportSettingController();
@@ -66,7 +67,11 @@ namespace OpenCppCoverage.VSPackage.Settings.UI
         public void UpdateFields(ProjectSelectionKind kind, bool displayProgramOutput)
         {
             var settings = ComputeStartUpProjectSettings(kind);
+            var keepComputedSettings = ShouldKeepComputedBasicSettings(settings, displayProgramOutput);
+            this.lastComputedStartUpProjectSettings = settings;
             this.UpdateStartUpProject(settings);
+            if (keepComputedSettings)
+                this.FilterSettingController.ClearSettings();
             this.selectedProjectPath = settings.ProjectPath;
             this.displayProgramOutput = displayProgramOutput;
             this.solutionConfigurationName = settings.SolutionConfigurationName;
@@ -83,17 +88,40 @@ namespace OpenCppCoverage.VSPackage.Settings.UI
 
             if (uiSettings != null)
             {
-                this.BasicSettingController.UpdateSettings(uiSettings.BasicSettingController);
-                this.FilterSettingController.UpdateSettings(uiSettings.FilterSettingController);
+                if (!keepComputedSettings)
+                {
+                    this.BasicSettingController.UpdateSettings(uiSettings.BasicSettingController);
+                    this.FilterSettingController.UpdateSettings(uiSettings.FilterSettingController);
+                }
                 this.ImportExportSettingController.UpdateSettings(uiSettings.ImportExportSettingController);
                 this.MiscellaneousSettingController.UpdateSettings(uiSettings.MiscellaneousSettingController);
             }
         }
 
         //---------------------------------------------------------------------
+        static bool ShouldKeepComputedBasicSettings(
+            StartUpProjectSettings settings,
+            bool displayProgramOutput)
+        {
+            if (displayProgramOutput)
+                return false;
+
+            return settings != null
+                && string.IsNullOrWhiteSpace(settings.ProjectName)
+                && string.IsNullOrWhiteSpace(settings.SolutionConfigurationName)
+                && !string.IsNullOrWhiteSpace(settings.Command);
+        }
+
+        //---------------------------------------------------------------------
         StartUpProjectSettings ComputeStartUpProjectSettings(ProjectSelectionKind kind)
         {
             return this.startUpProjectSettingsBuilder.ComputeSettings(kind);
+        }
+
+        //---------------------------------------------------------------------
+        StartUpProjectSettings GetResetStartUpProjectSettings()
+        {
+            return this.lastComputedStartUpProjectSettings ?? ComputeStartUpProjectSettings(this.kind);
         }
 
         //---------------------------------------------------------------------
