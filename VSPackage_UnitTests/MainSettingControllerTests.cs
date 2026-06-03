@@ -33,16 +33,28 @@ namespace VSPackage_UnitTests
         [TestMethod]
         public void GetMainSettings()
         {
-            var project = new StartUpProjectSettings.CppProject
+            var project1 = new StartUpProjectSettings.CppProject
             {
-                ModulePath = "ModulePath1",
-                SourcePaths = new List<string> { "Source1" },
-                Path = "Path"
+                ModulePath = "ModulePath1.exe",
+                SourcePaths = new List<string> { "Source1.cpp" },
+                Path = "Path1"
+            };
+            var project2 = new StartUpProjectSettings.CppProject
+            {
+                ModulePath = "ModulePath2.exe",
+                SourcePaths = new List<string> { "Source2.cpp" },
+                Path = "Path2"
+            };
+            var project3 = new StartUpProjectSettings.CppProject
+            {
+                ModulePath = "ModulePath3.exe",
+                SourcePaths = new List<string> { "Source3.cpp" },
+                Path = "Path3"
             };
 
             var startUpProjectSettings = new StartUpProjectSettings
             {
-                CppProjects = new List<StartUpProjectSettings.CppProject> { project, project }
+                CppProjects = new List<StartUpProjectSettings.CppProject> { project1, project2, project3 }
             };
 
             var controller = CreateController(startUpProjectSettings, null);
@@ -52,11 +64,106 @@ namespace VSPackage_UnitTests
             selectableProject.IsSelected = false;
 
             var settings = controller.GetMainSettings();
-            Assert.AreEqual(project.ModulePath, settings.BasicSettings.ModulePaths.Single());
             Assert.IsTrue(settings.DisplayProgramOutput);
+            CollectionAssert.AreEqual(
+                new[] { project2.ModulePath, project3.ModulePath },
+                settings.BasicSettings.ModulePaths.ToList());
+            CollectionAssert.AreEqual(
+                project2.SourcePaths.Concat(project3.SourcePaths).ToList(),
+                settings.BasicSettings.SourcePaths.ToList());
+        }
+
+        //---------------------------------------------------------------------
+        [TestMethod]
+        public void GetMainSettingsKeepsSingleProjectFilters()
+        {
+            var project = new StartUpProjectSettings.CppProject
+            {
+                ModulePath = "C:\\build\\it-amplitudewidget.cpp_d.exe",
+                SourcePaths = new List<string> { "C:\\source\\tests\\it-amplitudewidget" },
+                Path = "C:\\source\\tests\\it-amplitudewidget\\it-amplitudewidget.cpp"
+            };
+
+            var startUpProjectSettings = new StartUpProjectSettings
+            {
+                CppProjects = new List<StartUpProjectSettings.CppProject> { project }
+            };
+
+            var controller = CreateController(startUpProjectSettings, null);
+            controller.UpdateFields(ProjectSelectionKind.StartUpProject, true);
+
+            var settings = controller.GetMainSettings();
+
+            CollectionAssert.AreEqual(
+                new[] { project.ModulePath },
+                settings.BasicSettings.ModulePaths.ToList());
             CollectionAssert.AreEqual(
                 project.SourcePaths.ToList(),
                 settings.BasicSettings.SourcePaths.ToList());
+        }
+
+        //---------------------------------------------------------------------
+        [TestMethod]
+        public void DirectCurrentDocumentRunIgnoresStoredFilterPatterns()
+        {
+            var project = new StartUpProjectSettings.CppProject
+            {
+                ModulePath = "C:\\build\\it-amplitudewidget.cpp_d.exe",
+                SourcePaths = new List<string> { "C:\\source\\tests\\it-amplitudewidget" },
+                Path = "C:\\source\\tests\\it-amplitudewidget\\it-amplitudewidget.cpp"
+            };
+            var startUpProjectSettings = new StartUpProjectSettings
+            {
+                Command = project.ModulePath,
+                WorkingDir = "C:\\build",
+                ProjectPath = project.Path,
+                ProjectName = null,
+                SolutionConfigurationName = null,
+                CppProjects = new List<StartUpProjectSettings.CppProject> { project }
+            };
+
+            var storedFilterSettings = new FilterSettingController.SettingsData();
+            storedFilterSettings.AdditionalSourcePatterns.Add(new BindableString("*.cpp"));
+            storedFilterSettings.ExcludedSourcePatterns.Add(new BindableString("*.h"));
+            storedFilterSettings.AdditionalModulePatterns.Add(new BindableString("*.exe"));
+
+            var settingsStorage = new Mock<ISettingsStorage>();
+            settingsStorage
+                .Setup(s => s.TryLoad(project.Path, null))
+                .Returns(new UserInterfaceSettings
+                {
+                    BasicSettingController = new BasicSettingController.SettingsData
+                    {
+                        Data = new BasicSettingController.BasicSettingsData
+                        {
+                            ProgramToRun = "C:\\stale\\old.exe"
+                        }
+                    },
+                    FilterSettingController = storedFilterSettings,
+                    ImportExportSettingController = new ImportExportSettingController.SettingsData(),
+                    MiscellaneousSettingController = new MiscellaneousSettingController.SettingsData()
+                });
+
+            var controller = CreateController(
+                startUpProjectSettings,
+                null,
+                new Mock<IStartUpProjectSettingsBuilder>(),
+                settingsStorage.Object);
+            controller.UpdateFields(ProjectSelectionKind.StartUpProject, false);
+
+            var settings = controller.GetMainSettings();
+
+            Assert.AreEqual(project.ModulePath, settings.BasicSettings.ProgramToRun);
+            CollectionAssert.AreEqual(
+                new[] { project.ModulePath },
+                settings.BasicSettings.ModulePaths.ToList());
+            CollectionAssert.AreEqual(
+                project.SourcePaths.ToList(),
+                settings.BasicSettings.SourcePaths.ToList());
+            Assert.AreEqual(0, settings.FilterSettings.AdditionalSourcePaths.Count());
+            Assert.AreEqual(0, settings.FilterSettings.ExcludedSourcePaths.Count());
+            Assert.AreEqual(0, settings.FilterSettings.AdditionalModulePaths.Count());
+            Assert.AreEqual(0, settings.FilterSettings.ExcludedModulePaths.Count());
         }
 
         //---------------------------------------------------------------------
@@ -84,6 +191,48 @@ namespace VSPackage_UnitTests
             Assert.AreEqual(
                 startUpProjectSettings.WorkingDir,
                 settings.BasicSettings.WorkingDirectory);
+        }
+
+        //---------------------------------------------------------------------
+        [TestMethod]
+        public void ResetToDefaultCommandUsesLastComputedSettings()
+        {
+            var initialSettings = new StartUpProjectSettings
+            {
+                Command = "CurrentDocumentProgram",
+                WorkingDir = "CurrentDocumentWorkingDir",
+                CppProjects = new List<StartUpProjectSettings.CppProject>()
+            };
+            var staleSettings = new StartUpProjectSettings
+            {
+                Command = "",
+                WorkingDir = "",
+                CppProjects = new List<StartUpProjectSettings.CppProject>()
+            };
+
+            var settingsStorage = new Mock<ISettingsStorage>();
+            var builder = new Mock<IStartUpProjectSettingsBuilder>();
+            builder.SetupSequence(b => b.ComputeSettings(ProjectSelectionKind.StartUpProject))
+                .Returns(initialSettings)
+                .Returns(staleSettings);
+
+            var controller = new MainSettingController(
+                settingsStorage.Object,
+                null,
+                builder.Object,
+                null);
+
+            controller.UpdateFields(ProjectSelectionKind.StartUpProject, true);
+            controller.BasicSettingController.BasicSettings.ProgramToRun = "ChangedProgram";
+
+            controller.ResetToDefaultCommand.Execute(null);
+
+            Assert.AreEqual(
+                initialSettings.Command,
+                controller.BasicSettingController.BasicSettings.ProgramToRun);
+            builder.Verify(
+                b => b.ComputeSettings(ProjectSelectionKind.StartUpProject),
+                Times.Once());
         }
 
         //---------------------------------------------------------------------

@@ -227,15 +227,6 @@ namespace OpenCppCoverage.VSPackage.Settings.UI
                 .Where(path => !string.IsNullOrWhiteSpace(path))
                 .ToList();
 
-            // In the VS2026 fallback path we can only determine the startup module
-            // reliably. Passing that single module over-filters coverage to the
-            // test executable, so prefer broad module collection in that case.
-            if (modulePaths.Count <= 1)
-            {
-                modulePaths.Clear();
-                sourcePaths.Clear();
-            }
-
             return new BasicSettings
             {
                 ModulePaths = modulePaths,

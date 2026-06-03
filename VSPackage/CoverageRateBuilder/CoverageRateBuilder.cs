@@ -15,6 +15,8 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 using OpenCppCoverage.VSPackage.CoverageData;
+using System;
+using System.IO;
 using System.Linq;
 
 using ProtoBuff = global::OpenCppCoverage.VSPackage.CoverageData.ProtoBuff;
@@ -24,6 +26,12 @@ namespace OpenCppCoverage.VSPackage.CoverageRateBuilder
     //--------------------------------------------------------------------------
     class CoverageRateBuilder
     {
+        static readonly string[] IncludedSourceFileExtensions =
+        {
+            ".cpp",
+            ".hpp"
+        };
+
         //---------------------------------------------------------------------
         public CoverageRate Build(CoverageResult result)
         {
@@ -34,12 +42,22 @@ namespace OpenCppCoverage.VSPackage.CoverageRateBuilder
             foreach (var protoModule in result.Modules)
             {
                 var module = new ModuleCoverage(protoModule.Path);
-                foreach (var protoFile in protoModule.FilesList)
+                foreach (var protoFile in protoModule.FilesList.Where(IsIncludedSourceFile))
                     module.AddChild(BuildFileCoverage(protoFile));
-                coverageRate.AddChild(module);
+
+                if (module.Children.Any())
+                    coverageRate.AddChild(module);
             }
 
             return coverageRate;
+        }
+
+        //---------------------------------------------------------------------
+        static bool IsIncludedSourceFile(ProtoBuff.FileCoverage protoFile)
+        {
+            var extension = Path.GetExtension(protoFile.Path);
+            return IncludedSourceFileExtensions
+                .Contains(extension, StringComparer.OrdinalIgnoreCase);
         }
 
         //---------------------------------------------------------------------

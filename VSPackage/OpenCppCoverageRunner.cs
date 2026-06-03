@@ -51,6 +51,7 @@ namespace OpenCppCoverage.VSPackage
             this.outputWindowWriter.WriteLine("Run:");
             this.outputWindowWriter.WriteLine(string.Format(@"""{0}"" {1}",
                 fileName, arguments));
+            WriteBasicSettings(basicSettings);
             if (!string.IsNullOrWhiteSpace(logPath))
                 this.outputWindowWriter.WriteLine("Log written to " + logPath);
 
@@ -79,16 +80,15 @@ namespace OpenCppCoverage.VSPackage
 
                     if (!string.IsNullOrWhiteSpace(logPath))
                     {
-                        var directory = Path.GetDirectoryName(logPath);
-                        if (!string.IsNullOrWhiteSpace(directory))
-                            Directory.CreateDirectory(directory);
-
-                        logWriter = new StreamWriter(logPath, false, Encoding.UTF8);
-                        logWriter.WriteLine(DateTime.Now.ToString("O"));
-                        logWriter.WriteLine("Command:");
-                        logWriter.WriteLine(string.Format(@"""{0}"" {1}", fileName, arguments));
-                        logWriter.WriteLine();
-                        logWriter.Flush();
+                        logWriter = TryCreateLogWriter(logPath);
+                        if (logWriter != null)
+                        {
+                            logWriter.WriteLine(DateTime.Now.ToString("O"));
+                            logWriter.WriteLine("Command:");
+                            logWriter.WriteLine(string.Format(@"""{0}"" {1}", fileName, arguments));
+                            logWriter.WriteLine();
+                            logWriter.Flush();
+                        }
                     }
 
                     process.Start();
@@ -124,6 +124,57 @@ namespace OpenCppCoverage.VSPackage
         }
 
         //---------------------------------------------------------------------
+        void WriteBasicSettings(BasicSettings settings)
+        {
+            this.outputWindowWriter.WriteLine("Program to run: " + settings.ProgramToRun);
+            this.outputWindowWriter.WriteLine("Working directory: " + settings.WorkingDirectory);
+            WriteValues("Sources", settings.SourcePaths);
+            WriteValues("Modules", settings.ModulePaths);
+        }
+
+        //---------------------------------------------------------------------
+        void WriteValues(string label, System.Collections.Generic.IEnumerable<string> values)
+        {
+            this.outputWindowWriter.WriteLine(label + ":");
+            var hasValue = false;
+            if (values != null)
+            {
+                foreach (var value in values)
+                {
+                    if (string.IsNullOrWhiteSpace(value))
+                        continue;
+
+                    hasValue = true;
+                    this.outputWindowWriter.WriteLine("  " + value);
+                }
+            }
+
+            if (!hasValue)
+                this.outputWindowWriter.WriteLine("  <none>");
+        }
+
+        //---------------------------------------------------------------------
+        StreamWriter TryCreateLogWriter(string logPath)
+        {
+            try
+            {
+                var directory = Path.GetDirectoryName(logPath);
+                if (!string.IsNullOrWhiteSpace(directory))
+                    Directory.CreateDirectory(directory);
+
+                return new StreamWriter(
+                    new FileStream(logPath, FileMode.Create, FileAccess.Write, FileShare.ReadWrite),
+                    Encoding.UTF8);
+            }
+            catch (Exception exception)
+            {
+                this.outputWindowWriter.WriteLine(
+                    "Cannot write diagnostic process log: " + exception.Message);
+                return null;
+            }
+        }
+
+        //---------------------------------------------------------------------
         string GetOpenCppCoveragePath(string commandPath)
         {
             var assemblyLocation = System.Reflection.Assembly.GetExecutingAssembly().Location;
@@ -146,7 +197,9 @@ namespace OpenCppCoverage.VSPackage
                 if (string.IsNullOrWhiteSpace(programDirectory) || string.IsNullOrWhiteSpace(programName))
                     return null;
 
-                return Path.Combine(programDirectory, $"OpenCppCoverage-{programName}.log");
+                return Path.Combine(
+                    programDirectory,
+                    $"OpenCppCoverage-{programName}-{Guid.NewGuid():N}.log");
             }
             catch
             {

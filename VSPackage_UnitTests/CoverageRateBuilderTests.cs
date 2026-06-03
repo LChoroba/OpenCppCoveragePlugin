@@ -31,9 +31,9 @@ namespace VSPackage_UnitTests
         [TestMethod]
         public void CoverageRateResults()
         {
-            var file1 = CreateFileCoverage("file1", true, false, true);
-            var file2 = CreateFileCoverage("file2", true, true);
-            var file3 = CreateFileCoverage("file3", true, false, false);
+            var file1 = CreateFileCoverage("file1.cpp", true, false, true);
+            var file2 = CreateFileCoverage("file2.hpp", true, true);
+            var file3 = CreateFileCoverage("file3.cpp", true, false, false);
             string coverageName = "coverageName";
             int exitCode = 42;
 
@@ -53,6 +53,29 @@ namespace VSPackage_UnitTests
 
             var module2 = AssertChildCoverage(coverageRateResult, 1, 1, 3);
             AssertChildCoverage(module2, 0, 1, 3); // File 3
+        }
+
+        //---------------------------------------------------------------------
+        [TestMethod]
+        public void CoverageRateResultsOnlyIncludeCppAndHppFiles()
+        {
+            var cppFile = CreateFileCoverage("source.cpp", true, false);
+            var hppFile = CreateFileCoverage("header.hpp", true);
+            var cFile = CreateFileCoverage("source.c", true);
+            var ccFile = CreateFileCoverage("source.cc", true);
+            var hFile = CreateFileCoverage("header.h", true);
+
+            var builder = new CoverageRateBuilder();
+            var coverageRateResult = builder.Build(
+                CreateCoverageResult(
+                    "coverageName",
+                    0,
+                    CreateModuleCoverage("module", cppFile, hppFile, cFile, ccFile, hFile)));
+
+            AssertCoverage(coverageRateResult, 2, 3);
+            var module = AssertChildCoverage(coverageRateResult, 0, 2, 3);
+            var files = module.Children.Select(file => file.Path).ToList();
+            CollectionAssert.AreEqual(new[] { "source.cpp", "header.hpp" }, files);
         }
 
         //---------------------------------------------------------------------
